@@ -23,7 +23,8 @@ COPY --chown=${NB_USER}:${NB_GID} ./Makefile /home/jovyan/Makefile
 
 COPY --chown=${NB_USER}:${NB_GID} ./scripts/templating.py /home/jovyan/scripts/templating.py
 
-COPY --chown=${NB_USER}:${NB_GID} ./notebooks/etl.ipynb /home/jovyan/etl.ipynb
+COPY --chown=${NB_USER}:${NB_GID} ./notebooks/ /home/jovyan/notebooks/
 
 COPY --chown=${NB_USER}:${NB_GID} ./etl.py /home/jovyan/etl.py
 
+COPY --chown=${NB_USER}:${NB_GID} ./README.md /home/jovyan/README.md
