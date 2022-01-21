@@ -1,0 +1,45 @@
+version: "2.2"
+
+x-env: &env_ps
+  environment:
+    - POSTGRES_USER=postgres
+    - POSTGRES_PASSWORD=admin1234
+    - POSTGRES_DB=books258589
+
+x-env2: &env_others
+  environment: 
+    - JUPYTER_ENABLE_LAB=yes
+    - JUPYTER_TOKEN=docker
+
+    - DATABASE_SERVER=postgresql
+    - DATABASE_DRIVER=psycopg2
+    - DATABASE_IP_ADDRESS=postgres
+    - DATABASE_PORT=5432
+    - DATABASE_PASSWORD=admin1234
+    - DATABASE_USERNAME=postgres
+    - DATABASE_NAME=books258589
+
+services:
+
+  postgres:
+    image: postgres:12
+    <<: *env_ps
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -U $$POSTGRES_USER -d $$POSTGRES_DB -h localhost"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    ports:
+      - 5432:5432
+    volumes:
+      - ${PWD}/tmp/pgdata:/var/lib/postgresql/data
+  
+  jupyterlab:
+    # image: jupyter/scipy-notebook:latest
+    build: .
+    ports:
+      - 8888:8888
+    <<: *env_others
+    depends_on:
+      postgres:
+        condition: service_healthy
