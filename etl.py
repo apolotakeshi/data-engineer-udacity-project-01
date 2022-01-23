@@ -2,10 +2,10 @@ import os
 import glob
 import psycopg2
 import pandas as pd
+import json
+from scripts.templating import choose_template
 from table_creation.create_tables import generate_uri
 from table_creation.sql_queries import song_select, songplay_table_insert
-
-from sqlalchemy import create_engine
 
 def get_files(filepath, extension="*.json"):
     """
@@ -65,8 +65,106 @@ def read_json(file):
     """
     return pd.read_json(file, lines=True)
 
+def to_str(input_list):
+    """
+    - converts a list into a single string 
+    example: ['a','b'] -> '(a,b)'
+    """
+    return str(tuple(input_list)).replace("'","")
 
-def process_song_file(engine, find_path):
+def prepare_columns(df, template_formatted="%({})s"):
+    """
+    - receives a dataframe and a format template
+    - convert each of its columns into this template
+    - Returns its columns_name into a string and a string formatted
+    example df['a','b'] -> '(a,b)', '( %(a)s, %(b)s )' 
+    """
+    df_columns= df.columns
+    flatten= []
+    for elem in df_columns:
+        flatten.append(template_formatted.format(elem))
+    
+    return to_str(df_columns), to_str(flatten)
+
+def inject_template(df
+        , database_table_name: str
+        , conflict_rule: str =""
+        , conflict_action="NOTHING"
+        , template_name="insert_data"):
+    """
+    Requires
+    df :
+        pandas dataframe
+    
+    database_table_name :
+        Name of SQL table.
+    
+    conn : SQLAlchemy connectable(engine/connection) or database string URI
+        or sqlite3 DBAPI2 connection
+        Using SQLAlchemy makes it possible to use any DB supported by that
+        library.
+        If a DBAPI2 object, only sqlite3 is supported.
+    
+    """
+    
+    template = choose_template(template_name)
+    columns_names, columns_names_formatted = prepare_columns(df)
+    
+    d={}
+    d["columns_names"] = columns_names
+    d["columns_names_formatted"] = columns_names_formatted
+    d["database_table_name"]= database_table_name
+    d["conflict_rule"] = conflict_rule
+    d["conflict_action"] = conflict_action
+    
+    return template.format(**d)
+
+def inject_data(
+        df
+        , cur
+        , conn
+        , injection_rule
+        , show_status_at = 250
+    ):
+    """
+    Requires
+    df
+        pandas dataframe
+        
+    conn : SQLAlchemy connectable(engine/connection) or database string URI
+        or sqlite3 DBAPI2 connection
+        Using SQLAlchemy makes it possible to use any DB supported by that
+        library.
+        If a DBAPI2 object, only sqlite3 is supported.
+    
+    """
+    
+    
+    injection_data_list = json.loads( df.to_json(orient="records") )
+    
+    print("Start processing the {}".format(injection_rule), flush=True)
+    print("...", flush=True)
+
+    for counter, injection_data in enumerate(injection_data_list):
+        letter =""
+        size = len(injection_data_list) -1
+        
+        cur.execute(injection_rule, injection_data)
+        conn.commit()
+
+        if counter == len(injection_data_list) -1:
+            letter = "! DONE"
+            print(flush=True)
+        else: 
+            if size < show_status_at:
+                letter = "."
+            else:
+                if counter % show_status_at == 0:
+                    letter = "."
+        
+        print(letter, end="", flush=True)
+
+def process_song_file(conn, cur, find_path, show_status_at=250):
     """
     Pipeline to prepare the songs
     - retrieve
@@ -96,9 +194,18 @@ def process_song_file(engine, find_path):
     song_data = df[songs_desired_columns]\
     .drop_duplicates()
 
-    # insert song record
-    song_data\
-        .to_sql('songs', con=engine, if_exists='append',index=False)
+    # insert song record    
+    inject_data(
+                song_data
+                , cur
+                , conn
+                , injection_rule= inject_template(
+                                                    song_data
+                                                    , "songs"
+                                                    , conflict_rule="(song_id)"
+                                                    , conflict_action="""NOTHING"""
+                                                )
+            )
     
     ## Artists
     artists_desired_columns= [
@@ -121,11 +228,21 @@ def process_song_file(engine, find_path):
         .drop_duplicates()
     
     # insert artist record
-    artist_data\
-        .to_sql('artists', con=engine, if_exists='append',index=False)
+    inject_data(
+        artist_data
+        , cur
+        , conn
+        , injection_rule= inject_template(
+                artist_data
+                                            , "artists"
+                                            , conflict_rule="(artist_id)"
+                                            , conflict_action="""NOTHING"""
+                                        )
+        , show_status_at=show_status_at
+    )
 
 
-def process_log_file(conn, cur, engine, find_path, show_status_at=250):
+def process_log_file(conn, cur, find_path, show_status_at=250):
     """
     Pipeline to prepare the log access
     - retrieve information
@@ -134,7 +251,6 @@ def process_log_file(conn, cur, engine, find_path, show_status_at=250):
     -- due the amount of data, there is a tracker letting users 
     know about progress
     """
-    
     
     # open log file
     log_files = get_files(find_path)
@@ -146,17 +262,18 @@ def process_log_file(conn, cur, engine, find_path, show_status_at=250):
                         )
                     )
 
-    log_df['time'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True)
-    log_df['hour'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.hour
-    log_df['day'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.day
+    log_df['time'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).astype(str)
+    log_df['hour'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.hour.astype(str)
+    log_df['day'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.day.astype(str)
 
     ## warning of deprecation
-    # log_df['week'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.week
+    # log_df['week'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.week.astype(str)
 
-    log_df['week'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.isocalendar().week
-    log_df['month'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.month
-    log_df['year'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.year
-    log_df['weekday'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.weekday
+    log_df['week'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.isocalendar().week.astype(str)
+    log_df['month'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.month.astype(str)
+    log_df['year'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.year.astype(str)
+    log_df['weekday'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.weekday.astype(str)
+
 
 
     # filter by NextSong action
@@ -182,9 +299,17 @@ def process_log_file(conn, cur, engine, find_path, show_status_at=250):
 
     
     # insert time data records
-    times_df\
-        .to_sql('time', con=engine, if_exists='append',index=False)
-
+    inject_data(
+        times_df
+        , cur
+        , conn
+        , injection_rule= inject_template(
+                                            times_df
+                                            , "time"
+                                            , conflict_rule="(start_time)"
+                                            , conflict_action="""NOTHING"""
+                                        )
+    )
     ## Users
 
     users_desired_columns= [
@@ -213,8 +338,17 @@ def process_log_file(conn, cur, engine, find_path, show_status_at=250):
     )   
 
     # insert user records
-    users_df\
-        .to_sql('users', con=engine, if_exists='append',index=False)
+    inject_data(
+        users_df
+        , cur
+        , conn
+        , injection_rule= inject_template(
+                                            users_df
+                                            , "users"
+                                            , conflict_rule="(user_id)"
+                                            , conflict_action=""" UPDATE SET level = EXCLUDED.level"""
+                                        )
+    )
 
     songplays_desired_columns = [
         "time",
@@ -289,11 +423,10 @@ def main():
             generate_uri(override_env={"DATABASE_NAME":"sparkifydb"})
         )
     cur = conn.cursor()
-    engine = create_engine(generate_uri(template="postgres_url", override_env={"DATABASE_NAME":"sparkifydb"})) 
 
-    process_song_file(engine, find_path='data/song_data')
+    process_song_file(conn, cur, find_path='data/song_data')
     
-    process_log_file(conn, cur, engine, find_path='data/log_data')
+    process_log_file(conn, cur, find_path='data/log_data')
     
     conn.close()
 

@@ -15,6 +15,11 @@ def choose_template(key):
     template["postgres_url"] = "{DATABASE_SERVER}+{DATABASE_DRIVER}://{DATABASE_USERNAME}:{DATABASE_PASSWORD}@{DATABASE_IP_ADDRESS}:{DATABASE_PORT}/{DATABASE_NAME}"
     template["create_table"] = "CREATE TABLE IF NOT EXISTS {} "
     template["drop_table"]   = "DROP TABLE IF EXISTS {} "
+
+    template["insert_data"] = """INSERT INTO {database_table_name} {columns_names}
+    VALUES {columns_names_formatted}
+    ON CONFLICT {conflict_rule}
+    DO {conflict_action} """
     
     if key in template:
         return template[key]

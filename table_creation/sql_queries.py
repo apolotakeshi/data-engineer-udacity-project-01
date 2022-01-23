@@ -72,7 +72,7 @@ schemas["artists"]=artists
 # --
 time={}
 time["table_description"] = "Timestamps of records in songplays broken down into specific units" 
-time["start_time"] = "timestamptz_NOT NULL"
+time["start_time"] = "timestamptz_PRIMARY KEY_NOT NULL"
 time["hour"]       = "int"
 time["day"]        = "int"
 time["week"]       = "int"
