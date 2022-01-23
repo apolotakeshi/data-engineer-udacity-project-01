@@ -398,7 +398,6 @@ def process_log_file(conn, cur, find_path, show_status_at=250):
 
         # insert songplay record
         songplay_data = (
-            #check what to use here, maybe index? using now auto_incremental approach. a.k.a. serial
             row.time,
             row.userId,
             row.level,
