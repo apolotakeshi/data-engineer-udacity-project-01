@@ -130,13 +130,18 @@ def inject_data(
     Requires
     df
         pandas dataframe
-        
+
+    cur : stands for SQLAlchemy cursor
+
     conn : SQLAlchemy connectable(engine/connection) or database string URI
         or sqlite3 DBAPI2 connection
         Using SQLAlchemy makes it possible to use any DB supported by that
         library.
         If a DBAPI2 object, only sqlite3 is supported.
     
+    injection_rule: The rule used to insert data
+
+    show_status_at: On screen tracker for better visibility of run
     """
     
     
@@ -261,7 +266,8 @@ def process_log_file(conn, cur, find_path, show_status_at=250):
                             , log_files
                         )
                     )
-
+    
+    # astype(str) is because when using json the data gets converted if they are not str 
     log_df['time'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).astype(str)
     log_df['hour'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.hour.astype(str)
     log_df['day'] = pd.to_datetime(log_df['ts'], unit='ms', utc=True).dt.day.astype(str)
